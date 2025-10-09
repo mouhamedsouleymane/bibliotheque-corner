@@ -70,9 +70,9 @@ jobs:
         env:
           DB_HOST: 127.0.0.1
           DB_PORT: 3306
-          DB_DATABASE: laravel
+          DB_DATABASE: bibliotheque
           DB_USERNAME: root
-          DB_PASSWORD: root
+          DB_PASSWORD:
         run: |
           php -r "file_put_contents('.env', preg_replace('/^DB_CONNECTION=.*/m','DB_CONNECTION=mysql', file_get_contents('.env')));"
           {
@@ -80,11 +80,11 @@ jobs:
             echo "DB_PORT=${DB_PORT}";
             echo "DB_DATABASE=${DB_DATABASE}";
             echo "DB_USERNAME=${DB_USERNAME}";
-            echo "DB_PASSWORD=${DB_PASSWORD}";
+            echo "DB_PASSWORD=";
           } >> .env
           # wait for mysql service
           for i in {1..30}; do
-            if mysqladmin ping -h "${DB_HOST}" -P "${DB_PORT}" -u"${DB_USERNAME}" -p"${DB_PASSWORD}" --silent; then
+            if mysqladmin ping -h "${DB_HOST}" -P "${DB_PORT}" -u"${DB_USERNAME}" -p"" --silent; then
               break;
             fi;
             sleep 2;
