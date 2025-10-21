@@ -19,8 +19,8 @@ jobs:
       mysql:
         image: mysql:8
         env:
-          MYSQL_ROOT_PASSWORD:
-          MYSQL_DATABASE:bibliotheque
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: laravel
         ports:
           - 3306:3306
         options: >-
@@ -38,15 +38,16 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
-          extensions: mbstring, intl, pdo, sqlite, pdo_sqlite, pdo_mysql
+          extensions: mbstring, intl, pdo, sqlite, pdo_sqlite, pdo_mysql, gd, xml, curl
           tools: composer:v2
 
       - name: Cache Composer dependencies
         uses: actions/cache@v4
         with:
           path: vendor
-          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.lock') }}
+          key: composer-${{ runner.os }}-php-${{ matrix.php }}-${{ hashFiles('**/composer.lock') }}
           restore-keys: |
+            composer-${{ runner.os }}-php-${{ matrix.php }}-
             composer-${{ runner.os }}-
 
       - name: Install PHP dependencies
@@ -57,16 +58,22 @@ jobs:
           cp .env.example .env
           php artisan key:generate --force
 
-     
+      - name: Configure SQLite
+        if: matrix.db == 'sqlite'
+        run: |
+          php -r "file_put_contents('.env', preg_replace('/^DB_CONNECTION=.*/m','DB_CONNECTION=sqlite', file_get_contents('.env')));"
+          echo "DB_DATABASE=database/database.sqlite" >> .env
+          mkdir -p database
+          touch database/database.sqlite
 
       - name: Configure MySQL
         if: matrix.db == 'mysql'
         env:
           DB_HOST: 127.0.0.1
           DB_PORT: 3306
-          DB_DATABASE: bibliotheque
+          DB_DATABASE: laravel
           DB_USERNAME: root
-          DB_PASSWORD:
+          DB_PASSWORD: root
         run: |
           php -r "file_put_contents('.env', preg_replace('/^DB_CONNECTION=.*/m','DB_CONNECTION=mysql', file_get_contents('.env')));"
           {
@@ -74,11 +81,12 @@ jobs:
             echo "DB_PORT=${DB_PORT}";
             echo "DB_DATABASE=${DB_DATABASE}";
             echo "DB_USERNAME=${DB_USERNAME}";
-            echo "DB_PASSWORD=";
+            echo "DB_PASSWORD=${DB_PASSWORD}";
           } >> .env
-          # wait for mysql service
+
+          # Attendre que MySQL soit prêt
           for i in {1..30}; do
-            if mysqladmin ping -h "${DB_HOST}" -P "${DB_PORT}" -u"${DB_USERNAME}" -p"" --silent; then
+            if mysqladmin ping -h "${DB_HOST}" -P "${DB_PORT}" -u"${DB_USERNAME}" -p"${DB_PASSWORD}" --silent; then
               break;
             fi;
             sleep 2;
@@ -87,10 +95,13 @@ jobs:
       - name: Run database migrations
         run: php artisan migrate --force
 
+      - name: Clear cache
+        run: php artisan config:clear && php artisan cache:clear
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Cache npm dependencies
         uses: actions/cache@v4
@@ -98,9 +109,9 @@ jobs:
           path: |
             ~/.npm
             node_modules
-          key: npm-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          key: npm-${{ runner.os }}-node-20-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            npm-${{ runner.os }}-
+            npm-${{ runner.os }}-node-20-
 
       - name: Install frontend dependencies
         run: npm ci
@@ -111,3 +122,50 @@ jobs:
       - name: Run tests
         run: php artisan test --without-tty -q
 
+      - name: Run PHPStan (optionnel)
+        run: composer require --dev laravel/pint --no-interaction && vendor/bin/pint --test
+
+  deploy-check:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          coverage: none
+          extensions: mbstring, intl, pdo, pdo_mysql, gd, xml, curl
+          tools: composer:v2
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Check for Procfile
+        run: |
+          if [ ! -f "Procfile" ]; then
+            echo "❌ Procfile manquant - nécessaire pour Heroku"
+            exit 1
+          else
+            echo "✅ Procfile présent"
+            cat Procfile
+          fi
+
+      - name: Check environment configuration
+        run: |
+          if [ ! -f ".env.example" ]; then
+            echo "❌ .env.example manquant"
+            exit 1
+          fi
+          echo "✅ .env.example présent"
+
+          # Vérifier les variables importantes
+          REQUIRED_VARS=("APP_KEY" "DB_CONNECTION")
+          for var in "${REQUIRED_VARS[@]}"; do
+            if ! grep -q "^$var=" .env.example; then
+              echo "⚠️  Variable $var manquante dans .env.example"
+            fi
+          done
