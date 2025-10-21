@@ -1,23 +1,15 @@
 {
-    "version": 2,
     "$schema": "https://openapi.vercel.sh/vercel.json",
     "outputDirectory": "public",
     "functions": {
-        "api/index.php": {
-            "runtime": "vercel-php@0.6.0"
+        "api/lambda.php": {
+            "runtime": "vercel-php@0.7.4"
         }
     },
     "rewrites": [
         {
             "source": "/(.*)",
-            "destination": "/api/index.php"
+            "destination": "/api/lambda.php"
         }
-    ],
-    "env": {
-        "APP_ENV": "production",
-        "APP_DEBUG": "false",
-        "APP_URL": "https://yourapp.vercel.app",
-        "LOG_CHANNEL": "stderr",
-        "SESSION_DRIVER": "cookie"
-    }
+    ]
 }
